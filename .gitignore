@@ -5,6 +5,7 @@
 .ipynb_checkpoints/
 
 # Ignore Data files
+*copy*
 *test*.*
 Data/
 UNOS/Data/
