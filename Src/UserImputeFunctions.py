@@ -8,7 +8,6 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
 
-
 def gaussian_mixture_binning(data, colum_list, seed, n_init=10):
     """
     This function is designed to fit a Gaussian Mixture Model (GMM) with different numbers of 
@@ -37,7 +36,6 @@ def gaussian_mixture_binning(data, colum_list, seed, n_init=10):
     plt.legend()
     plt.title('AIC and BIC for GMM')
     plt.show()
-
 
 
 
