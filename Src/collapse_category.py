@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 
 
-def nominal_rank_survival(data, feature_col, duration_col, custom_order=None, min_n=30,
+def nominal_rank_survival(data, feature_col, duration_col='TransplantSurvivalDay', custom_order=None, min_n=30,
                            r_thresh=0.10, rotation=0):
     """
     Perform survival-based ranking and statistical grouping of categorical features.
