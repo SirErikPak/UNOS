@@ -228,7 +228,7 @@ def nominal_rank_survival(data, feature_col, duration_col, custom_order=None, mi
     }
 
 
-def result_to_single_dataframe(results):
+def results_to_single_dataframe(results):
     """
     Convert a structured statistical analysis result into a standardized long-format DataFrame.
 
