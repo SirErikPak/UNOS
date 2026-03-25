@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import pickle
 from collections import Counter
+from collections import defaultdict
 from scipy import stats
 
 
@@ -233,6 +234,73 @@ def get_top_frequencies(data, column_name, top_n=20, sep=","):
     freq = Counter(all_items)
 
     return freq.most_common(top_n)
+
+
+def build_feature_dict(results):
+    """
+    Construct a clean, deterministic summary of collapsed categorical groups.
+
+    Parameters
+    ----------
+    results : dict
+        Expected keys:
+        - "feature": str
+        - "mapping": dict {raw_category -> group_label}
+        - "counts": dict {raw_category -> count}
+        - "method_used": str
+
+    Returns
+    -------
+    dict
+        {
+            "feature": <feature_name>,
+            "method_used": <method>,
+            "Group_1": {"Total_N": int, "Categories": [...]},
+            ...
+        }
+    """
+
+    feature = results["feature"]
+    mapping = results["mapping"]
+    counts = results["counts"]
+    method_used = results.get("method_used", "unknown")
+
+    # Reverse mapping: group → list of categories
+    rev = defaultdict(list)
+    for cat, grp in mapping.items():
+        rev[grp].append(cat)
+
+    # Sort categories inside each group for deterministic output
+    for grp in rev:
+        rev[grp] = sorted(rev[grp])
+
+    # Compute group totals
+    group_totals = {
+        grp: sum(int(counts.get(cat, 0)) for cat in cats)
+        for grp, cats in rev.items()
+    }
+
+    # Build group summaries
+    groups = {
+        grp: {
+            "Total_N": int(group_totals[grp]),
+            "Categories": cats
+        }
+        for grp, cats in rev.items()
+    }
+
+    # Sort groups by numeric suffix (Group_1, Group_2, ...)
+    sorted_groups = dict(sorted(
+        groups.items(),
+        key=lambda x: int(x[0].split("_")[1])
+    ))
+
+    # Final deterministic structure
+    return {
+        "feature": feature,
+        "method_used": method_used,
+        **sorted_groups
+    }
 
 
 def write_to_file(data, filename, path='../Data/', format='csv'):
