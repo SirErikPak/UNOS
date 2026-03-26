@@ -230,6 +230,10 @@ class NominalSurvivalRanker:
             order = sorted(present)
 
         if len(order) < 2:
+            print(f"[WARNING] Cannot perform statistical comparison for {feature_col}")
+            print(f"          Only 1 category has n ≥ {self.min_n}.")
+            print(f"          You can only compare MORE THAN ONE category since n < min_n.")
+            print()
             return {
                 "feature": feature_col,
                 "groups": [[order[0]]],
@@ -331,7 +335,7 @@ class NominalSurvivalRanker:
 
         print("INCLUDED CATEGORIES:")
         for cat, n in included.sort_index().items():
-            print(f" * {cat:<20}: {n:6d} records")
+            print(f" * {cat:<50}: {n:6d} records")
 
         # --------------------------------------------------------------
         # BYPASSED CATEGORIES (those with n < min_n)
@@ -341,7 +345,7 @@ class NominalSurvivalRanker:
         if len(bypassed) > 0:
             print("BYPASSED CATEGORIES (n < min_n):")
             for cat, n in bypassed.sort_index().items():
-                print(f" * {cat:<20}: {n:6d} records")
+                print(f" * {cat:<50}: {n:6d} records")
         else:
             print("BYPASSED CATEGORIES: None")
 
@@ -381,7 +385,7 @@ class NominalSurvivalRanker:
         else:
             print("[Pairwise comparison output suppressed]")
 
-        print("=" * 80 + "\n")
+        print("=" * 80)
 
         # --------------------------------------------------------------
         # 8. Graph-based collapsing
@@ -401,20 +405,31 @@ class NominalSurvivalRanker:
         # 9. Add small categories as overflow group
         # --------------------------------------------------------------
         small_cats = sorted(counts[counts < self.min_n].index.tolist())
-        if small_cats:
-            collapsed_groups.append(small_cats)
 
         # --------------------------------------------------------------
-        # 10. Build category → group mapping
+        # 10. Build mapping for included categories (collapsed groups)
         # --------------------------------------------------------------
         mapping = {}
-        for i, group in enumerate(collapsed_groups):
+
+        # Assign real collapsed groups
+        for group_id, group in enumerate(collapsed_groups, start=1):
             for cat in group:
-                mapping[cat] = f"Group_{i+1}"
+                mapping[cat] = f"Group_{group_id}"
+
+        # Assign bypassed categories to 'Other'
+        for cat in small_cats:
+            mapping[cat] = "Other"
 
         # --------------------------------------------------------------
-        # 11. Return structured result
+        # Print number of collapsed groups
         # --------------------------------------------------------------
+        num_groups = len(collapsed_groups)
+        print(f"::::: Collapsed into {num_groups} groups (excluding 'Other') :::::")
+        print("=" * 80 + "\n")
+       
+        # --------------------------------------------------------------
+        # 11. Return structured result
+        # --------------------------------------------------------------               
         return {
             "feature": feature_col,
             "method_used": self.method,
@@ -423,9 +438,9 @@ class NominalSurvivalRanker:
             "pairwise": pair_records,
             "pairwise_df": pairwise_df,
             "kruskal": {"H": H, "p": p, "eta2": eta2},
-            "counts": counts.to_dict()
+            "counts": counts.to_dict(),
+            
         }
-
     # ------------------------------------------------------------------
     # Helper: Apply learned mapping to a dataframe
     # ------------------------------------------------------------------
@@ -513,13 +528,25 @@ class NominalSurvivalRanker:
             for grp, cats in rev.items()
         }
 
-        # Sort groups by numeric suffix (Group_1, Group_2, ...)
-        sorted_groups = dict(sorted(
-            groups.items(),
+        # --------------------------------------------------------------
+        # Separate real groups ("Group_X") from non-group buckets
+        # --------------------------------------------------------------
+        real_groups = {k: v for k, v in groups.items() if k.startswith("Group_")}
+        other_groups = {k: v for k, v in groups.items() if not k.startswith("Group_")}
+
+        # --------------------------------------------------------------
+        # Sort real groups by numeric suffix
+        # --------------------------------------------------------------
+        sorted_real = dict(sorted(
+            real_groups.items(),
             key=lambda x: int(x[0].split("_")[1])
         ))
 
-        # Final deterministic structure
+        # --------------------------------------------------------------
+        # Append non-group buckets at the end
+        # --------------------------------------------------------------
+        sorted_groups = {**sorted_real, **other_groups}
+
         return {
             "feature": feature,
             "method_used": method_used,
