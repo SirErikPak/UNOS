@@ -5,6 +5,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from itertools import combinations
+from collections import defaultdict
 from scipy.stats import kruskal, mannwhitneyu
 
 
@@ -41,8 +42,8 @@ class NominalSurvivalRanker:
         self,
         duration_col="TransplantSurvivalDay",
         min_n=30,
-        r_thresh=0.10,
-        method="bonferroni",
+        r_thresh=0.10,       # Effect size threshold for merging (rank-biserial correlation)
+        method="bonferroni", # Multiple-testing correction method: "bonferroni", "holm", or "fdr"
         suppress_pairwise=False,
         plot=True,
         rotation=0
@@ -322,7 +323,27 @@ class NominalSurvivalRanker:
         print("=" * 80)
         print(f"RANKING REPORT: {feature_col} (n ≥ {self.min_n})")
         print("=" * 80)
-        # ... (Inclusion/Bypass prints remain the same) ...
+
+        # --------------------------------------------------------------
+        # INCLUDED CATEGORIES (those meeting min_n)
+        # --------------------------------------------------------------
+        included = counts[counts >= self.min_n]
+
+        print("INCLUDED CATEGORIES:")
+        for cat, n in included.sort_index().items():
+            print(f" * {cat:<20}: {n:6d} records")
+
+        # --------------------------------------------------------------
+        # BYPASSED CATEGORIES (those with n < min_n)
+        # --------------------------------------------------------------
+        bypassed = counts[counts < self.min_n]
+
+        if len(bypassed) > 0:
+            print("BYPASSED CATEGORIES (n < min_n):")
+            for cat, n in bypassed.sort_index().items():
+                print(f" * {cat:<20}: {n:6d} records")
+        else:
+            print("BYPASSED CATEGORIES: None")
 
         print("-" * 80)
         print(f"Kruskal H: {H:.4f} | P-value: {p:.6e} | Effect η²: {eta2:.4f}")
@@ -437,3 +458,172 @@ class NominalSurvivalRanker:
 
         df[new_col] = df[feature_col].astype(str).map(mapping).fillna("Unmapped")
         return df
+    
+
+    def build_feature_dict(self,results):
+        """
+        Construct a clean, deterministic summary of collapsed categorical groups.
+
+        Parameters
+        ----------
+        results : dict
+            Expected keys:
+            - "feature": str
+            - "mapping": dict {raw_category -> group_label}
+            - "counts": dict {raw_category -> count}
+            - "method_used": str
+
+        Returns
+        -------
+        dict
+            {
+                "feature": <feature_name>,
+                "method_used": <method>,
+                "Group_1": {"Total_N": int, "Categories": [...]},
+                ...
+            }
+        """
+
+        feature = results["feature"]
+        mapping = results["mapping"]
+        counts = results["counts"]
+        method_used = results.get("method_used", "unknown")
+
+        # Reverse mapping: group → list of categories
+        rev = defaultdict(list)
+        for cat, grp in mapping.items():
+            rev[grp].append(cat)
+
+        # Sort categories inside each group for deterministic output
+        for grp in rev:
+            rev[grp] = sorted(rev[grp])
+
+        # Compute group totals
+        group_totals = {
+            grp: sum(int(counts.get(cat, 0)) for cat in cats)
+            for grp, cats in rev.items()
+        }
+
+        # Build group summaries
+        groups = {
+            grp: {
+                "Total_N": int(group_totals[grp]),
+                "Categories": cats
+            }
+            for grp, cats in rev.items()
+        }
+
+        # Sort groups by numeric suffix (Group_1, Group_2, ...)
+        sorted_groups = dict(sorted(
+            groups.items(),
+            key=lambda x: int(x[0].split("_")[1])
+        ))
+
+        # Final deterministic structure
+        return {
+            "feature": feature,
+            "method_used": method_used,
+            **sorted_groups
+        }
+
+    # ------------------------------------------------------------------
+    # Convert results dict → long-format DataFrame
+    # ------------------------------------------------------------------
+    def to_long_dataframe(self, results):
+        """
+        Convert a structured statistical analysis result into a standardized
+        long-format DataFrame.
+
+        Supports:
+            - feature
+            - method_used
+            - groups
+            - mapping
+            - pairwise (p_raw, p_adj, r, sig)
+            - kruskal stats
+            - counts
+            - pairwise_df (ignored unless needed)
+
+        Returns
+        -------
+        pd.DataFrame
+            Long-format table with columns:
+                section | key | value
+        """
+
+        rows = []
+
+        # -------------------------
+        # Feature name
+        # -------------------------
+        rows.append({
+            "section": "feature",
+            "key": "feature",
+            "value": results["feature"]
+        })
+
+        # -------------------------
+        # Method name
+        # -------------------------
+        rows.append({
+            "section": "method",
+            "key": "method",
+            "value": results.get("method_used", "unknown")
+        })
+
+        # -------------------------
+        # Collapsed groups
+        # -------------------------
+        for i, group in enumerate(results["groups"], start=1):
+            rows.append({
+                "section": "groups",
+                "key": f"Group_{i}",
+                "value": group
+            })
+
+        # -------------------------
+        # Mapping (category → group)
+        # -------------------------
+        for cat, grp in results["mapping"].items():
+            rows.append({
+                "section": "mapping",
+                "key": cat,
+                "value": grp
+            })
+
+        # -------------------------
+        # Pairwise results
+        # -------------------------
+        for row in results["pairwise"]:
+            rows.append({
+                "section": "pairwise",
+                "key": f"{row['cat1']} vs {row['cat2']}",
+                "value": {
+                    "p_raw": float(row.get("p_raw", np.nan)),
+                    "p_adj": float(row.get("p_adj", np.nan)),
+                    "r": float(row.get("r", np.nan)),
+                    "sig": bool(row.get("sig", False))
+                }
+            })
+
+        # -------------------------
+        # Global Kruskal–Wallis stats
+        # -------------------------
+        for k, v in results["kruskal"].items():
+            rows.append({
+                "section": "kruskal",
+                "key": k,
+                "value": float(v)
+            })
+
+        # -------------------------
+        # Category counts
+        # -------------------------
+        for cat, n in results["counts"].items():
+            rows.append({
+                "section": "counts",
+                "key": cat,
+                "value": int(n)
+            })
+
+        return pd.DataFrame(rows)
