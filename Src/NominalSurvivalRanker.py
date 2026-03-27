@@ -279,7 +279,8 @@ class NominalSurvivalRanker:
                 legend=False
             )
             plt.title(f"{feature_col} — H={H:.2f}, η²={eta2:.3f}")
-            plt.xticks(rotation=self.rotation)
+            ha = 'right' if self.rotation == 45 else 'center'
+            plt.xticks(rotation=self.rotation, ha=ha)
             plt.tight_layout()
             plt.show()
 
