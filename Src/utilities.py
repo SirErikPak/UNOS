@@ -302,6 +302,12 @@ def build_feature_dict(results):
     }
 
 
+def remove_cat_zero_count(data):
+    for col in data.select_dtypes(include="category"):
+        data[col] = data[col].cat.remove_unused_categories()
+    return data
+
+
 def write_to_file(data, filename, path='../Data/', format='csv'):
     """
     write dataframe to disk
@@ -312,7 +318,11 @@ def write_to_file(data, filename, path='../Data/', format='csv'):
     if format.lower() == 'csv':
         # write to disk
         data.to_csv(file_path, index=False)
-    else:
+    elif format.lower() == 'pickle':  # pickle format
         data.to_pickle(file_path)     
-    
+    elif format.lower() == 'parquet':  # parquet format
+        data.to_parquet(file_path, index=False)
+    else:
+        raise ValueError(f"Unsupported format: {format}. Use 'csv', 'pickle', or 'parquet'.")
+
     return print(f"{len(data):,} records written to {file_path}")

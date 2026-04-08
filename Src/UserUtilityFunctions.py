@@ -172,7 +172,7 @@ def remove_column(data, col, display=True):
         print(f"\nTotal Row(s) & Column(s) Before Removing Column(s): {data.shape[0]:,} & columns: {data.shape[1]:,}")
     
     if existing_cols:
-        data = data.drop(columns=existing_cols, axis=1)
+        data = data.drop(columns=existing_cols)
         data = data.reset_index(drop=True)
     
     if display:
