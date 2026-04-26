@@ -12,11 +12,12 @@ Backup/
 
 # Jupyter Notebooks
 .ipynb_checkpoints
-Untitled*
-*old*
+Untitled*.*
+*old*.*
 
 # Ignore Data files
 Note*.*
+*test*.*
 
 # Environments and Secrets
 .venv/
