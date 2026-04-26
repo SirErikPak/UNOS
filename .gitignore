@@ -18,3 +18,9 @@ Untitled*
 # Ignore Data files
 Note*.*
 
+# Environments and Secrets
+.venv/
+venv/
+env/
+.env
+
