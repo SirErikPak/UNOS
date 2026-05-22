@@ -1226,12 +1226,6 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
     pass
 
 
-import numpy as np
-import pandas as pd
-import scipy.stats as stats
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 
 def check_informative_missingness(data, col, txt='', target='TransplantSurvivalDay', unknown_val=None):
     """
