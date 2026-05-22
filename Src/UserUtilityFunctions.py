@@ -80,24 +80,17 @@ def mapping_columns(data, colstr, mapdict, display=True):
 
 
 
-def convert_to_category(data, col, ordered=False):
+def convert_to_category(data, cols, ordered=False):
     """
-    This function converts specified columns in a DataFrame to the category data type.
-    
-    Parameters:
-    - data: The DataFrame containing the data to be converted.
-    - col: A list of columns to convert to categories.
-    - ordered: A boolean flag to indicate if the category should be ordered.
-    
-    Returns:
-    - The DataFrame with the specified columns converted to category dtype.
+    Convert one or more DataFrame columns to (optionally ordered) categorical dtype.
     """
-    # iterate over the columns and convert them to categories
-    for val in col:
-        dtype = pd.CategoricalDtype(ordered=ordered)
-        data[val] = data[val].astype(dtype)  # apply the ordered category type
+    cat_type = pd.CategoricalDtype(ordered=ordered)
+
+    for col in cols:
+        data[col] = data[col].astype(cat_type)
 
     return data
+
 
 
 
