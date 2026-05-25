@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy import stats
+from collections import Counter
 from typing import List, Optional
 from rich.console import Console
 from rich.table import Table
@@ -8,6 +9,7 @@ from rich.panel import Panel
 from rich.columns import Columns
 from rich.box import ROUNDED
 from rich.text import Text
+
 
 # -------------------------------------------------------------------------------------------
 # 1: Row Removal with Masking
@@ -1226,7 +1228,10 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
     pass
 
 
-
+# -------------------------------------------------------------------------------------------
+# 17: Check for Informative Missingness with Statistical Testing and Effect Size
+# (Handles both single columns and lists of columns with clean iteration)
+# -------------------------------------------------------------------------------------------
 def check_informative_missingness(data, col, txt='', target='TransplantSurvivalDay', unknown_val=None):
     """
     Compare survival outcomes between Known vs Missing/Unknown groups for one or more columns.
@@ -1238,7 +1243,7 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
             check_informative_missingness(data, c, txt=txt, target=target, unknown_val=unknown_val)
         return
 
-    # --- Single-column logic ---
+    # Single-column logic with robust handling of unknown value definitions and missing data
     if unknown_val is not None:
         is_unknown = (data[col] == unknown_val) | (data[col].isna())
     else:
@@ -1268,7 +1273,7 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
     m_u, m_k = unknown.mean(), known.mean()
     var_u, var_k = unknown.var(ddof=1), known.var(ddof=1)
 
-    # --- Cohen's d ---
+    # Cohen's d calculation with pooled standard deviation
     dof = n_u + n_k - 2
     pooled_std = np.sqrt(((n_u - 1) * var_u + (n_k - 1) * var_k) / dof)
     d = (m_u - m_k) / pooled_std if pooled_std != 0 else 0
@@ -1289,7 +1294,7 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
     else:
         strength = "Large"
 
-    # --- Welch's t-test ---
+    # Welch's t-test computation
     t_stat, p_val = stats.ttest_ind(unknown, known, equal_var=False)
 
     # Determine structural outcomes and messaging
@@ -1302,7 +1307,7 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
         result_badge = "[bold green]✔ RANDOM MISSINGNESS DETECTED[/bold green]"
         interpretation = "[grey50]Statistical Significance: Consistent with MCAR (Missing Completely at Random).[/grey50]"
 
-    # --- Build Perfectly Aligned Layout ---
+    # Build Aligned Layout
     grid = Table.grid(expand=False)
     
     # Updated Structured Cohort Comparison Table
@@ -1353,28 +1358,9 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
     pass
 
 
-
-
-
-def get_cols_by_cardinality(data, cat, dropna=True, flag=False):
-    """
-    Return columns based on cardinality threshold.
-    
-    Args:
-        data: DataFrame
-        cat: cardinality threshold
-        dropna: whether to count NaN as a unique value
-        flag: 
-            True  -> return columns with cardinality > cat
-            False -> return columns with cardinality <= cat
-    """
-    if flag:
-        return [col for col in data.columns if data[col].nunique(dropna=dropna) > cat]
-    else:
-        return [col for col in data.columns if data[col].nunique(dropna=dropna) <= cat]
-
-
-
+# -------------------------------------------------------------------------------------------
+# 18: Get Column Summary Based on Unique Value Counts with Rich UI Display
+# -------------------------------------------------------------------------------------------
 def get_column_summary(data, cat=2, flag=True, dropna=True, ignore_list=None):
     """
     Categorizes columns based on unique value counts and displays a stylish Rich UI summary.
@@ -1405,9 +1391,11 @@ def get_column_summary(data, cat=2, flag=True, dropna=True, ignore_list=None):
         collapse_padding=True
     )
 
+    # Added explicit text justification rules and locking sizes for a clean, consistent layout
     table.add_column("Column", style="cyan", justify="left")
     table.add_column("Unique Values (truncated)", justify="left")
 
+    # Populate rows with dynamic truncation for readability
     for col, values in summary.items():
         # Truncate long lists for readability
         display_vals = values[:5]
@@ -1426,3 +1414,221 @@ def get_column_summary(data, cat=2, flag=True, dropna=True, ignore_list=None):
     console.print(panel)
 
     return cols
+
+
+# -------------------------------------------------------------------------------------------
+# 19: Get Columns Based on Cardinality Threshold
+# -------------------------------------------------------------------------------------------
+def get_cols_by_cardinality(data, cat, dropna=True, flag=False):
+    """
+    Return columns based on cardinality threshold.
+    
+    Args:
+        data: DataFrame
+        cat: cardinality threshold
+        dropna: whether to count NaN as a unique value
+        flag: 
+            True  -> return columns with cardinality > cat
+            False -> return columns with cardinality <= cat
+    """
+    if flag:
+        return [col for col in data.columns if data[col].nunique(dropna=dropna) > cat]
+    else:
+        return [col for col in data.columns if data[col].nunique(dropna=dropna) <= cat]
+    
+
+# -------------------------------------------------------------------------------------------
+# 20: Continuous Value Predicts Survival with Correlation Metrics and Rich UI Display
+# -------------------------------------------------------------------------------------------
+def continuous_value_predicts_survival(data, col, txt='', target='TransplantSurvivalDay'):
+    """
+    Assess whether a continuous feature has a linear relationship with survival time using Pearson 
+    and Spearman correlations. Computes correlation coefficients, p-values, and R² values, and displays 
+    a polished Rich UI report summarizing the findings with dynamic significance badges and clear interpretation.
+    """
+    # If col is a list, iterate cleanly
+    if isinstance(col, (list, tuple)):
+        for c in col:
+            continuous_value_predicts_survival(data, c, txt=txt, target=target)
+        return
+
+    # 20-1: Single-column logic with robust handling of missing data and clean statistical testing
+    console = Console()
+
+    # Drop missing values across target and feature variables
+    df = data[[col, target]].dropna()
+
+    # Handle insufficient data gracefully inside a warning panel
+    if len(df) < 3:
+        console.print(
+            Panel(
+                f"[bold yellow]Insufficient data[/bold yellow]\n"
+                f"[grey50]Need ≥3 valid rows for '{col}'.[/grey50]",
+                title="Correlation Warning",
+                border_style="yellow",
+                box=ROUNDED,
+                padding=(1, 2),
+                expand=False
+            )
+        )
+        return
+
+    # 20-1: Compute Pearson and Spearman correlations
+    pear_r, pear_p = stats.pearsonr(df[col], df[target])
+    spear_r, spear_p = stats.spearmanr(df[col], df[target])
+
+    # 20-2: Build compact internal stats table
+    stats_table = Table(
+        box=None,
+        show_header=True,
+        header_style="bold grey50",
+        padding=(0, 2)
+    )
+    # Added explicit text justification rules and locking sizes for a clean, consistent layout
+    stats_table.add_column("Metric", justify="left")
+    stats_table.add_column("r", justify="right", style="cyan")
+    stats_table.add_column("p", justify="right", style="magenta")
+    stats_table.add_column("R²", justify="right", style="yellow")
+
+    # Dynamically injects clean formatted strings matching your layout targets
+    stats_table.add_row("Pearson", f"{pear_r:+.3f}", f"{pear_p:.2e}", f"{pear_r**2:.3%}")
+    stats_table.add_row("Spearman", f"{spear_r:+.3f}", f"{spear_p:.2e}", f"{spear_r**2:.3%}")
+
+    # Evaluate significance and dynamic badge colors
+    significant = (pear_p < 0.05) or (spear_p < 0.05)
+    
+    # Build dynamic badge text based on significance and direction of Pearson correlation
+    if significant:
+        direction = "positive" if pear_r > 0 else "negative"
+        badge = (
+            f"[bold green]✔ Significant relationship[/bold green]\n"
+            f"[grey50]Feature shows a linear {direction} directional association with survival.[/grey50]"
+        )
+    else:
+        badge = (
+            "[bold grey50]✖ No strong relationship[/bold grey50]\n"
+            "[grey35]Pattern consistent with random variation.[/grey35]"
+        )
+
+    # 20-3: Build Aligned Layout
+    layout_grid = Table.grid(expand=False)
+    layout_grid.add_row(f"[bold white]Predictive Metrics Summary[/bold white] {f'[grey35]({txt})[/grey35]' if txt else ''}")
+    layout_grid.add_row("")  # Visual break spacer
+    layout_grid.add_row(stats_table)
+    layout_grid.add_row("")  # Visual break spacer
+    layout_grid.add_row(badge)
+
+    # Print the outer wrapped panel frame safely
+    console.print(
+        Panel(
+            layout_grid,
+            title=f"{col}",
+            title_align="left",
+            border_style="cyan" if significant else "grey35",
+            box=ROUNDED,
+            padding=(1, 2),
+            expand=False
+        )
+    )
+    
+    pass
+
+
+
+
+
+def get_top_frequencies(data, column_name, top_n=20, sep=",", txt=''):
+    """
+    Explodes a string-delimited column into individual items, calculates 
+    their frequency distribution, and displays a slick, modern ranking table.
+    """
+    console = Console()
+
+    # 1. Gracefully handle edge case where column doesn't exist in data
+    if column_name not in data.columns:
+        console.print(
+            Panel(
+                f"[bold yellow]Column Missing[/bold yellow]\n"
+                f"[grey50]The feature '[bold cyan]{column_name}[/bold cyan]' was not found in the dataset.[/grey50]",
+                title="Pipeline Warning",
+                border_style="yellow",
+                box=ROUNDED,
+                padding=(1, 2),
+                expand=False
+            )
+        )
+        return []
+
+    # 2. Extract series, drop missing values, and enforce string mapping to avoid typing errors
+    raw_series = data[column_name].dropna().astype(str)
+
+    if raw_series.empty:
+        console.print(
+            Panel(
+                f"[bold yellow]Empty Column Pool[/bold yellow]\n"
+                f"[grey50]The feature '[bold cyan]{column_name}[/bold cyan]' contains zero valid entries to process.[/grey50]",
+                title="Pipeline Warning",
+                border_style="yellow",
+                box=ROUNDED,
+                padding=(1, 2),
+                expand=False
+            )
+        )
+        return []
+
+    # 3. Explode delimited elements and strip whitespace blocks
+    all_items = (
+        raw_series
+        .str.split(sep)
+        .explode()
+        .str.strip()
+    )
+    
+    # Drop empty string remnants that occur from trailing commas (e.g., "Med_A, ")
+    all_items = all_items[all_items != ""]
+
+    # 4. Calculate distributions and grab top limits
+    freq_counter = Counter(all_items)
+    top_items = freq_counter.most_common(top_n)
+    total_extracted_counts = sum(freq_counter.values())
+
+    # 5. Build Compact Rich Layout Table
+    stats_table = Table(
+        box=None,
+        show_header=True,
+        header_style="bold grey50",
+        padding=(0, 3)
+    )
+    stats_table.add_column("Rank", justify="center", style="grey50")
+    stats_table.add_column("Categorical Item", justify="left", style="cyan", min_width=24)
+    stats_table.add_column("Frequency", justify="right", style="magenta")
+    stats_table.add_column("Share (%)", justify="right", style="yellow")
+
+    # Populate rows with explicit percentage weights
+    for rank, (item, count) in enumerate(top_items, start=1):
+        percentage_share = count / total_extracted_counts if total_extracted_counts > 0 else 0
+        stats_table.add_row(
+            f"#{rank}",
+            str(item),
+            f"{count:,}",
+            f"{percentage_share:.2%}"
+        )
+
+    # 6. Master Layout Assembly Grid
+    layout_grid = Table.grid(expand=False)
+    layout_grid.add_row(f"[bold white]Frequency Distribution Ranking[/bold white] {f'[grey35]({txt})[/grey35]' if txt else ''}")
+    layout_grid.add_row(f"[grey50]Total Exploded Occurrences: {total_extracted_counts:,}[/grey50]\n")
+    layout_grid.add_row(stats_table)
+
+    # 7. Print Output Frame with complete emoji-safe top boundary assurance
+    console.print(
+        Panel(
+            layout_grid,
+            title=f"{column_name}",
+            title_align="left",
+            border_style="cyan",
+            box=ROUNDED,
+            padding=(1, 2),
+            expand=False
+        )
+    )
