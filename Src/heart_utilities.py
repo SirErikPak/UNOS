@@ -731,6 +731,9 @@ def symmetric_difference(set1, set2, set1_name="Set A", set2_name="Set B"):
     
     # Sort all unique values across both sets to check them cleanly
     all_values = sorted(set1.union(set2))
+
+    # Compute symmetric difference (returned to caller)
+    sym_set = set1.symmetric_difference(set2)
     
     for val in all_values:
         in_set1 = val in set1
@@ -758,9 +761,9 @@ def symmetric_difference(set1, set2, set1_name="Set A", set2_name="Set B"):
     )
 
     console.print(panel)
-    
+
     # Return the actual symmetric difference set for backend use
-    return
+    return sym_set
 
 
 # -------------------------------------------------------------------------------------------
@@ -1106,130 +1109,6 @@ def any_nans(data: pd.DataFrame, txt: str = "") -> None:
 
 # -------------------------------------------------------------------------------------------
 # 16: Check for Informative Missingness with Statistical Testing and Effect Size
-# -------------------------------------------------------------------------------------------
-def check_informative_missingness(data, col, txt='', target='TransplantSurvivalDay', unknown_val=None):
-    """
-    Compare survival outcomes between Known vs Missing/Unknown groups for one or more columns.
-    Computes Welch's t-test, Cohen's d, and 95% CI for effect size. Displays a polished Rich UI report.
-    """
-    # If col is a list, iterate cleanly
-    if isinstance(col, (list, tuple)):
-        for c in col:
-            check_informative_missingness(data, c, txt=txt, target=target, unknown_val=unknown_val)
-        return
-
-    # 16-1: Single-column logic
-    if unknown_val is not None:
-        is_unknown = (data[col] == unknown_val) | (data[col].isna())
-    else:
-        is_unknown = data[col].isna()
-
-    # Extract target values for both groups, dropping NaNs to ensure clean statistical testing
-    unknown = data.loc[is_unknown, target].dropna()
-    known   = data.loc[~is_unknown, target].dropna()
-
-    console = Console()
-
-    # 16-2: Handle insufficient data gracefully inside a warning panel
-    if len(unknown) < 2 or len(known) < 2:
-        console.print(
-            Panel(
-                f"[bold yellow]⚠ Insufficient Sample Size[/bold yellow]\n"
-                f"[grey50]Feature '[bold cyan]{col}[/bold cyan]' requires at least 2 entries per group to run Welch's t-test.[/grey50]",
-                title=f"[bold grey27]⚙ Pipeline Warning: {col}[/bold grey27]",
-                title_align="left",
-                border_style="yellow",
-                expand=False
-            )
-        )
-        return
-
-    # 16-3: Group stats
-    n_u, n_k = len(unknown), len(known)
-    m_u, m_k = unknown.mean(), known.mean()
-    var_u, var_k = unknown.var(ddof=1), known.var(ddof=1)
-
-    # 16-4: Cohen's d
-    dof = n_u + n_k - 2
-    pooled_std = np.sqrt(((n_u - 1) * var_u + (n_k - 1) * var_k) / dof)
-    d = (m_u - m_k) / pooled_std if pooled_std != 0 else 0
-
-    # 16-5: 95% CI for d
-    se_d = np.sqrt((n_u + n_k) / (n_u * n_k) + (d**2) / (2 * (n_u + n_k)))
-    z = stats.norm.ppf(0.975)
-    lower, upper = d - z * se_d, d + z * se_d
-
-    # 16-6: Effect size interpretation
-    abs_d = abs(d)
-    if abs_d < 0.2:
-        strength = "Negligible"
-    elif abs_d < 0.5:
-        strength = "Small"
-    elif abs_d < 0.8:
-        strength = "Medium"
-    else:
-        strength = "Large"
-
-    # 16-7: Welch's t-test
-    t_stat, p_val = stats.ttest_ind(unknown, known, equal_var=False)
-
-    # 16-8: Determine structural outcomes and messaging
-    if p_val < 0.05:
-        result_color = "red"
-        result_badge = "[bold red]⚠ INFORMATIVE MISSINGNESS DETECTED[/bold red]"
-        interpretation = "[orange3]Statistical Significance:[/orange3] Not MCAR. Likely MAR or MNAR (Missingness pattern affects target profile)."
-    else:
-        result_color = "green"
-        result_badge = "[bold green]✔ RANDOM MISSINGNESS DETECTED[/bold green]"
-        interpretation = "[grey50]Statistical Significance: Consistent with MCAR (Missing Completely at Random).[/grey50]"
-
-    # 16-9: Build Perfectly Aligned Layout
-    grid = Table.grid(expand=False)
-    
-    # 16-9.1: Descriptive Cohort Statistics Table
-    stats_table = Table(box=None, padding=(0, 2), show_header=True, header_style="bold grey50")
-    stats_table.add_column("Cohort Group", min_width=15, justify="left")
-    stats_table.add_column("Sample Size (N)", min_width=15, justify="right", style="magenta")
-    stats_table.add_column("Mean Survival Time", min_width=20, justify="right", style="yellow")
-    
-    # Notice the explicit cast to int for N to drop any .0 floating point anomalies
-    stats_table.add_row("Unknown / Missing", f"{int(n_u):,}", f"{m_u:,.2f} days")
-    stats_table.add_row("Known / Complete", f"{int(n_k):,}", f"{m_k:,.2f} days")
-    
-    # 16-9.2: Add Content Rows to main layout grid
-    grid.add_row(f"[bold white]Cohort Overview[/bold white] {f'[grey35]({txt})[/grey35]' if txt else ''}")
-    grid.add_row(stats_table)
-    grid.add_row(f"[grey35]Mean Survival Delta:[/grey35] [bold white]{m_u - m_k:+,.2f} days[/bold white]\n")
-    
-    # 16-9.3: Add Statistical Testing Results with dynamic coloring and interpretation text
-    grid.add_row("─" * 58)
-    grid.add_row("\n[bold white]Statistical Testing Reports[/bold white]")
-    grid.add_row(f"[grey35]Welch's t-test p-value:[/grey35]  [bold cyan]{p_val:.4f}[/bold cyan]")
-    grid.add_row(f"[grey35]Cohen's d Effect Size:[/grey35]   [bold cyan]{d:.4f}[/bold cyan] ({strength})")
-    grid.add_row(f"[grey35]95% Effect Size CI:[/grey35]      [bold cyan][{lower:.4f}, {upper:.4f}][/bold cyan]\n")
-    
-    # Final result badge and interpretation text with dynamic coloring based on the test outcome
-    grid.add_row(result_badge)
-    grid.add_row(interpretation)
-
-    # 16-9-4. Outer Panel wrapper to prevent border clipping
-    panel = Panel(
-        grid,
-        title=f"[bold {result_color}]⚙ Informative Missingness Log: {col}[/bold {result_color}]",
-        title_align="left",
-        border_style=result_color,
-        padding=(1, 2),
-        expand=False
-    )
-
-    console.print(panel)
-    
-    # Guarantees zero return values leak 'None' strings out into notebooks
-    pass
-
-
-# -------------------------------------------------------------------------------------------
-# 17: Check for Informative Missingness with Statistical Testing and Effect Size
 # (Handles both single columns and lists of columns with clean iteration)
 # -------------------------------------------------------------------------------------------
 def check_informative_missingness(data, col, txt='', target='TransplantSurvivalDay', unknown_val=None):
@@ -1345,7 +1224,7 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
     # Outer Panel wrapper to prevent border clipping
     panel = Panel(
         grid,
-        title=f"[bold {result_color}]⚙ Informative Missingness Log: {col}[/bold {result_color}]",
+        title=f"[bold {result_color}]⚙ Informative Missingness Log ({txt}): {col}[/bold {result_color}]",
         title_align="left",
         border_style=result_color,
         padding=(1, 2),
@@ -1359,7 +1238,7 @@ def check_informative_missingness(data, col, txt='', target='TransplantSurvivalD
 
 
 # -------------------------------------------------------------------------------------------
-# 18: Get Column Summary Based on Unique Value Counts with Rich UI Display
+# 17: Get Column Summary Based on Unique Value Counts with Rich UI Display
 # -------------------------------------------------------------------------------------------
 def get_column_summary(data, cat=2, flag=True, dropna=True, ignore_list=None):
     """
@@ -1417,7 +1296,7 @@ def get_column_summary(data, cat=2, flag=True, dropna=True, ignore_list=None):
 
 
 # -------------------------------------------------------------------------------------------
-# 19: Get Columns Based on Cardinality Threshold
+# 18: Get Columns Based on Cardinality Threshold
 # -------------------------------------------------------------------------------------------
 def get_cols_by_cardinality(data, cat, dropna=True, flag=False):
     """
@@ -1438,7 +1317,7 @@ def get_cols_by_cardinality(data, cat, dropna=True, flag=False):
     
 
 # -------------------------------------------------------------------------------------------
-# 20: Continuous Value Predicts Survival with Correlation Metrics and Rich UI Display
+# 19: Continuous Value Predicts Survival with Correlation Metrics and Rich UI Display
 # -------------------------------------------------------------------------------------------
 def continuous_value_predicts_survival(data, col, txt='', target='TransplantSurvivalDay'):
     """
@@ -1452,7 +1331,7 @@ def continuous_value_predicts_survival(data, col, txt='', target='TransplantSurv
             continuous_value_predicts_survival(data, c, txt=txt, target=target)
         return
 
-    # 20-1: Single-column logic with robust handling of missing data and clean statistical testing
+    # 19-1: Single-column logic with robust handling of missing data and clean statistical testing
     console = Console()
 
     # Drop missing values across target and feature variables
@@ -1473,11 +1352,11 @@ def continuous_value_predicts_survival(data, col, txt='', target='TransplantSurv
         )
         return
 
-    # 20-1: Compute Pearson and Spearman correlations
+    # 19-1: Compute Pearson and Spearman correlations
     pear_r, pear_p = stats.pearsonr(df[col], df[target])
     spear_r, spear_p = stats.spearmanr(df[col], df[target])
 
-    # 20-2: Build compact internal stats table
+    # 19-2: Build compact internal stats table
     stats_table = Table(
         box=None,
         show_header=True,
@@ -1510,7 +1389,7 @@ def continuous_value_predicts_survival(data, col, txt='', target='TransplantSurv
             "[grey35]Pattern consistent with random variation.[/grey35]"
         )
 
-    # 20-3: Build Aligned Layout
+    # 19-3: Build Aligned Layout
     layout_grid = Table.grid(expand=False)
     layout_grid.add_row(f"[bold white]Predictive Metrics Summary[/bold white] {f'[grey35]({txt})[/grey35]' if txt else ''}")
     layout_grid.add_row("")  # Visual break spacer
@@ -1632,3 +1511,72 @@ def get_top_frequencies(data, column_name, top_n=20, sep=",", txt=''):
             expand=False
         )
     )
+
+
+
+
+
+def ks_diagnostic_panel(sample_a, sample_b, label_a="Group A", label_b="Group B"):
+    """
+    Display a Rich diagnostic panel summarizing a two-sample KS test.
+    """
+
+    console = Console()
+
+    # Run KS test
+    ks = ks_2samp(sample_a.dropna(), sample_b.dropna())
+
+    stat = float(ks.statistic)
+    pval = float(ks.pvalue)
+    loc  = float(ks.statistic_location)
+    sign = int(ks.statistic_sign)
+
+    # Interpret sign
+    sign_text = (
+        f"{label_a} < {label_b}" if sign < 0 else
+        f"{label_a} > {label_b}"
+    )
+
+    # Color coding
+    p_color = "green" if pval >= 0.05 else "red"
+    stat_color = "yellow" if stat < 0.05 else "red"
+
+    # Build table
+    table = Table(
+        title="Kolmogorov–Smirnov Diagnostic",
+        box=ROUNDED,
+        header_style="bold cyan",
+        padding=(0, 1)
+    )
+
+    table.add_column("Metric", justify="left")
+    table.add_column("Value", justify="right")
+
+    table.add_row("KS Statistic", f"[{stat_color}]{stat:.4f}[/{stat_color}]")
+    table.add_row("p-value", f"[{p_color}]{pval:.4f}[/{p_color}]")
+    table.add_row("Max Difference @", f"{loc:.2f}")
+    table.add_row("Direction", sign_text)
+
+    # Interpretation block
+    if pval < 0.05:
+        interp = (
+            "[bold red]Distributions differ statistically[/bold red]\n"
+            "The KS test detects a difference, but the statistic is small.\n"
+            "Large sample sizes can make tiny differences significant."
+        )
+    else:
+        interp = (
+            "[bold green]No statistical difference detected[/bold green]\n"
+            "The KS test finds no evidence that the distributions differ."
+        )
+
+    panel = Panel(
+        interp,
+        title="Interpretation",
+        border_style="cyan",
+        box=ROUNDED,
+        padding=(1, 2)
+    )
+
+    console.print(table)
+    console.print(panel)
