@@ -459,16 +459,27 @@ def calculate_gmm_kl_divergence(model,
 # -------------------------------------------------------------------------------------------
 def gmm_full_diagnostic(
     data: pd.Series,
-    n_components: int =2,
-    init_params: str ='kmeans',
-    n_init: int =10,
-    n: int =10_000,
-    random_state: int=None,
-    title_suffix: str =""
+    n_components: int = 2,
+    init_params: str = 'kmeans',
+    n_init: int = 10,
+    n: int = 10_000,
+    random_state: int = None,
+    title_suffix: str = ""
 ):
     """
-    Fit a univariate GMM, generate synthetic samples, compute KL divergence,
-    and visualize real vs synthetic density curves.
+    Perform a full diagnostic evaluation of a univariate Gaussian Mixture Model (GMM).
+
+    Purpose
+    -------
+    This function assesses how well a GMM represents the underlying data distribution by:
+      • Fitting a univariate GMM with the specified number of components.
+      • Generating synthetic samples from the fitted mixture model.
+      • Comparing real vs synthetic distributions using KL divergence.
+      • Visualizing both distributions with overlaid KDE curves.
+      • Reporting BIC and KL as quantitative goodness‑of‑fit metrics.
+
+    This diagnostic helps determine whether the chosen GMM configuration
+    is an appropriate generative model for the data.
 
     Parameters
     ----------
@@ -489,10 +500,14 @@ def gmm_full_diagnostic(
 
     Returns
     -------
-    model : GaussianMixture
-        Fitted GMM model.
-    kl_score : float
-        KL divergence between real and synthetic distributions.
+    dict
+        {
+            "model": GaussianMixture,
+            "kl_score": float,
+            "bic": float,
+            "synthetic_samples": np.ndarray,
+            "real_data": np.ndarray
+        }
     """
 
     # Convert Series → NumPy
@@ -542,7 +557,7 @@ def gmm_full_diagnostic(
 
     plt.title(
         f"GMM Validation ({n_components} components) {title_suffix}\n"
-        f"KL Divergence: {kl_score:.4f} | BIC: {model.bic(X):.2f}",
+        f"KL(real‖synth): {kl_score:.4f} | BIC: {model.bic(X):.2f}",
         loc="left"
     )
     plt.xlabel(title_suffix or "Value")
@@ -552,4 +567,11 @@ def gmm_full_diagnostic(
     plt.tight_layout()
     plt.show()
 
-    return model, kl_score
+    # Return structured diagnostic output
+    return {
+        "model": model,
+        "kl_score": kl_score,
+        "bic": model.bic(X),
+        "synthetic_samples": X_synth,
+        "real_data": X.flatten()
+    }

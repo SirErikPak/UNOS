@@ -1413,9 +1413,9 @@ def continuous_value_predicts_survival(data, col, txt='', target='TransplantSurv
     pass
 
 
-
-
-
+# -------------------------------------------------------------------------------------------
+# 20: Get Top Frequencies from a Delimited String Column with Rich UI Display
+# -------------------------------------------------------------------------------------------   
 def get_top_frequencies(data, column_name, top_n=20, sep=",", txt=''):
     """
     Explodes a string-delimited column into individual items, calculates 
@@ -1513,70 +1513,59 @@ def get_top_frequencies(data, column_name, top_n=20, sep=",", txt=''):
     )
 
 
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-
-
-def ks_diagnostic_panel(sample_a, sample_b, label_a="Group A", label_b="Group B"):
+def compare_gmm_vif(results, component_list):
     """
-    Display a Rich diagnostic panel summarizing a two-sample KS test.
+    Compute and display VIF diagnostics for GMM soft-cluster features
+    across multiple component counts.
+
+    Parameters
+    ----------
+    results : dict
+        Output dictionary from optimize_gmm_components(), containing:
+        results["all_models"][k]["gmm_features"]
+    component_list : list of int
+        List of component counts to evaluate (e.g., [3, 9])
+
+    Returns
+    -------
+    dict
+        {
+            k: DataFrame of VIF values for that model
+        }
     """
 
     console = Console()
+    vif_output = {}
 
-    # Run KS test
-    ks = ks_2samp(sample_a.dropna(), sample_b.dropna())
+    for k in component_list:
 
-    stat = float(ks.statistic)
-    pval = float(ks.pvalue)
-    loc  = float(ks.statistic_location)
-    sign = int(ks.statistic_sign)
+        gmm_features = results["all_models"][k]["gmm_features"]
 
-    # Interpret sign
-    sign_text = (
-        f"{label_a} < {label_b}" if sign < 0 else
-        f"{label_a} > {label_b}"
-    )
+        vif_df = pd.DataFrame({
+            "Feature": [f"Cluster_{i+1}" for i in range(gmm_features.shape[1])],
+            "VIF": [
+                variance_inflation_factor(gmm_features, i)
+                for i in range(gmm_features.shape[1])
+            ]
+        })
 
-    # Color coding
-    p_color = "green" if pval >= 0.05 else "red"
-    stat_color = "yellow" if stat < 0.05 else "red"
+        vif_output[k] = vif_df
 
-    # Build table
-    table = Table(
-        title="Kolmogorov–Smirnov Diagnostic",
-        box=ROUNDED,
-        header_style="bold cyan",
-        padding=(0, 1)
-    )
-
-    table.add_column("Metric", justify="left")
-    table.add_column("Value", justify="right")
-
-    table.add_row("KS Statistic", f"[{stat_color}]{stat:.4f}[/{stat_color}]")
-    table.add_row("p-value", f"[{p_color}]{pval:.4f}[/{p_color}]")
-    table.add_row("Max Difference @", f"{loc:.2f}")
-    table.add_row("Direction", sign_text)
-
-    # Interpretation block
-    if pval < 0.05:
-        interp = (
-            "[bold red]Distributions differ statistically[/bold red]\n"
-            "The KS test detects a difference, but the statistic is small.\n"
-            "Large sample sizes can make tiny differences significant."
+        # Build Rich table
+        table = Table(
+            title=f"VIF Diagnostic — {k} Components",
+            box=ROUNDED,
+            header_style="bold cyan",
+            padding=(0, 1)
         )
-    else:
-        interp = (
-            "[bold green]No statistical difference detected[/bold green]\n"
-            "The KS test finds no evidence that the distributions differ."
-        )
+        table.add_column("Feature", justify="left")
+        table.add_column("VIF", justify="right")
 
-    panel = Panel(
-        interp,
-        title="Interpretation",
-        border_style="cyan",
-        box=ROUNDED,
-        padding=(1, 2)
-    )
+        for _, row in vif_df.iterrows():
+            table.add_row(row["Feature"], f"{row['VIF']:.3f}")
 
-    console.print(table)
-    console.print(panel)
+        console.print(table)
+
+    return vif_output
